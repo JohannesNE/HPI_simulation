@@ -449,14 +449,9 @@ roc_plot_biased <- ggplot(roc_data_biased, aes(1-specificities, sensitivities)) 
 color_scale <- scale_color_manual(values = plot_colors,
                                   labels = c("Non-hypotensive events", "Hypotensive events"))
 
-labels <- d |> 
-    mutate(label = ifelse(hypo, "Hypotensive events", "Non-hypotensive events")) |> 
-    group_by(label) |> 
-    summarise(across(starts_with("map"), .fns = mean), hypo = first(hypo))
-
 scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
     geom_point(size = 0.7, show.legend = FALSE) +
-    geom_hline(yintercept = 65, color = "grey") +
+    geom_hline(yintercept = 65, color = "#555555") +
     scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(0,5))) + 
     scale_x_continuous(breaks = seq(65, 95, by = 10)) +
     
@@ -466,33 +461,33 @@ scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) +
     coord_equal() +
     theme(axis.title.x = ggtext::element_markdown())
 
-scatter_plot_full_w_labs <- scatter_plot_full
-scatter_plot_full_w_labs$layers <- c(
-    geom_label_repel(aes(label = label),
+labels <- tribble(
+    ~label,                  ~hypo, ~x, ~y,
+    "Hypotensive events",    TRUE,  Inf, -Inf,
+    "Non-hypotensive events",FALSE, -Inf, Inf
+    )
+
+event_labels <- geom_label(aes(x, y, label = label),
                      size = 3.5,
-                     box.padding = 0,
-                     point.size = 0.3,
-                     point.padding = 0,
-                     min.segment.length = 0,
-                     segment.color = "#555555",
-                     position = position_nudge_repel(y = c(-100, 42), x= c(100, -100)),
-                     label.size  = NA,
-                     #vjust = 1, 
-                     force = 1000,
-                     hjust = 0,
+                     #label.size  = NA,
+                     fill = "white",
+                     vjust = "inward", 
+                     hjust = "inward", 
                      family = "Helvetica",
                      data = labels,
                      show.legend = FALSE
-    ),
-    scatter_plot_full$layers
-)
+    ) 
 
-scatter_plot_grey <- scatter_plot_full_w_labs %+% filter(d, !grey) +
-    geom_hline(yintercept = 75, color = "grey") +
+scatter_plot_full_w_labs <- scatter_plot_full + event_labels
+
+scatter_plot_grey <- scatter_plot_full %+% filter(d, !grey) +
+    geom_hline(yintercept = 75, color = "#555555") +
+    event_labels +
     ggtitle("**B** Events where MAP (outcome) is between 65 and 75 mmHg (“gray zone”) are excluded") 
                
 scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
-    geom_vline(xintercept = 75, color = "grey") +
+    geom_vline(xintercept = 75, color = "#555555") +
+    event_labels +
     ggtitle("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg") 
 
 # Combine plots
