@@ -49,7 +49,7 @@ The correlation coefficient (` r = 0.6`) is chosen to give MAP a modest predicti
 However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message.
 
 ```{r}
-set.seed(123)
+set.seed(12345)
 correlated_map <- faux::rnorm_multi(n = 1000, 
                                     mu = c(75, 75), 
                                     sd = c(10, 10),
@@ -58,10 +58,11 @@ correlated_map <- faux::rnorm_multi(n = 1000,
                                     # "map_outcome" represents what map is 5 minutes from now.
                                     varnames = list("map_predictor", "map_outcome")
                                     )
+                                    
 ```
 
 We filter the simulated data to remove observations where the predictor MAP is below 65 mmHg.
-This reduces the AUC of all analyes, but the difference between the biaed and unbiaed selections remain clear.   
+This reduces the AUC of all analyses, but the difference between the biased and unbiased selections remain clear.   
 
 We also remove a few extreme points simply to reduce white space in the plots. Again, this simulation is not intended to mimic real data!
 
@@ -126,6 +127,35 @@ legend(
 ```
 
 In the end of this document we paste the remaining code used the create the paper's figure 3.
+
+# The ROC curve shape in the simulations differs slightly form those presented in the model-develop paper.
+
+The ROC curve in the paper's fig. 2C shows a distinct decrease in specificity when the map threshold is > 75 mmHg. In the model-development paper, the decrease in specificity is more gradual. (fig. 1). This difference can be explained by a combination of two effects. First, in the model development, all MAP values in a 30-minute period had to be > 75 mmHg; due to the variation in MAP over 30 minutes, any specific measurement (here, the midpoint) is unlikely to be very close to 75 mmHg. Second, although HPI may be driven predominantly by MAP, other predictors influence HPI as well.
+
+Here, we demonstrate the first explanation. We select non-hypotensive events based to the predictor MAP's distance from 75 mmHg. We use a gamma distribution to determine the probability that an observation should be included. (This is just one of many ways of making a simulation where non-hypotensive events with a predictor MAP close to 75 mmHg are unlikely).
+
+```{r}
+curve(pgamma(x-75, shape =2, rate = 1), 70, 85, 
+      xlab = "MAP predictor",
+      ylab = "Probability of including sample")
+```
+
+
+```{r}
+sampled <- rbernoulli(n=nrow(d), p = pgamma(d$map_predictor-75, shape = 2, rate = 1))
+
+d2 <- filter(d, hypo | (nonhypo & sampled))
+
+ggplot(d2, aes(map_predictor, map_outcome)) +
+    geom_point()
+```
+
+```{r}
+roc_d2 <- roc(hypo ~ map_predictor, data = d2)
+plot(roc_d2)
+plot(roc_analysis_biased, add = TRUE, col = "red")
+```
+
 
 # Creating a logistic regression model with only one relevant predictor
 
@@ -266,7 +296,7 @@ $$
 HPI_{map\ only} = 100 * \frac{1}{1 + e^{-(\beta_0 + \beta_1 MAP)}}
 $$
 
-The linear part of a logistic regression ($\beta_0 + \beta_1 MAP$) multiplies the idependent variable with a constant, $\beta_1$ and adds a constant, $beta_0$. This can reverse the ranks (if $\beta_1 < 0$) but not otherwise change them. The logisic link function also preserves the ranks (the same does multiplying by 100 to get the final HPI score).
+The linear part of a logistic regression ($\beta_0 + \beta_1 MAP$) multiplies the independent variable with a constant, $\beta_1$ and adds a constant, $\beta_0$. This can reverse the ranks (if $\beta_1 < 0$) but not otherwise change them. The logisic link function also preserves the ranks (the same does multiplying by 100 to get the final HPI score).
 
 ```{r}
 map_model <- glm(hypo ~ map_predictor, data = d_train, family = binomial())
@@ -312,7 +342,7 @@ theme_set(
             plot.title = ggtext::element_textbox_simple(
                 size = 10,
                 vjust = 0,
-                minheight = unit(3, "lines"), width = unit(2, "inches")
+                minheight = unit(3, "lines"), width = unit(2.5, "inches")
             ),
             axis.title = element_text(size = 9.5),
             axis.text = ggplot2::element_text(size = ggplot2::rel(0.8)),
@@ -452,7 +482,7 @@ color_scale <- scale_color_manual(values = plot_colors,
 scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
     geom_point(size = 0.7, show.legend = FALSE) +
     geom_hline(yintercept = 65, color = "#555555") +
-    scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(0,5))) + 
+    scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(1,5))) + 
     scale_x_continuous(breaks = seq(65, 95, by = 10)) +
     
     labs(x = "MAP<sub>now</sub> (predictor) [mmHg]", y = "MAP in 5 minutes (outcome) [mmHg]", color = "") + 
@@ -486,9 +516,13 @@ scatter_plot_grey <- scatter_plot_full %+% filter(d, !grey) +
     ggtitle("**B** Events where MAP (outcome) is between 65 and 75 mmHg (“gray zone”) are excluded") 
                
 scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
-    geom_vline(xintercept = 75, color = "#555555") +
+    annotate("segment",
+        x = 75, xend = 75,
+        y = 75, yend = Inf,
+        color = "#555555"
+    ) +
     event_labels +
-    ggtitle("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg") 
+    ggtitle("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg")
 
 # Combine plots
 scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
