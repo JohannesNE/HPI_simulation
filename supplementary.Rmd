@@ -329,7 +329,7 @@ roc_map_model <- roc(hypo ~ sim_HPI_w_map_only, data = d_train)
 
 # Create figure 3
 
-```{r fig.height=6.5, fig.width=9}
+```{r fig.height=9, fig.width=9}
 library(ggrepel)
 library(patchwork)
 
@@ -413,7 +413,6 @@ roc_plot_full <- ggplot(roc_data_full, aes(1-specificities, sensitivities)) +
              hjust = 1, vjust = -0,
              label.size = NA,
              family = "Helvetica",
-             #label.size = NA,
              size = 3.5) + 
     labs(x = "1 - specificity", y = "Sensitivity") +
     coord_equal()
@@ -479,13 +478,20 @@ roc_plot_biased <- ggplot(roc_data_biased, aes(1-specificities, sensitivities)) 
 color_scale <- scale_color_manual(values = plot_colors,
                                   labels = c("Non-hypotensive events", "Hypotensive events"))
 
+fill_scale <- scale_fill_manual(values = plot_colors,
+                                  labels = c("Non-hypotensive events", "Hypotensive events"))                                  
+
+x_scale <- scale_x_continuous(breaks = seq(65, 95, by = 10), 
+    limits = round(range(d$map_predictor) + c(-1, 1), 0), 
+    name = "MAP<sub>now</sub> (predictor) [mmHg]")
+
 scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
     geom_point(size = 0.7, show.legend = FALSE) +
     geom_hline(yintercept = 65, color = "#555555") +
     scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(1,5))) + 
-    scale_x_continuous(breaks = seq(65, 95, by = 10)) +
+    x_scale +
     
-    labs(x = "MAP<sub>now</sub> (predictor) [mmHg]", y = "MAP in 5 minutes (outcome) [mmHg]", color = "") + 
+    labs(y = "MAP in 5 minutes (outcome) [mmHg]", color = "") + 
     ggtitle("**A** Full analysis") +
     color_scale +
     coord_equal() +
@@ -524,10 +530,42 @@ scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
     event_labels +
     ggtitle("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg")
 
+# Density plots
+get_density <- function(data, from = from) {
+    dens <- density(data$map_predictor, adjust = 2, n = 100, from = from)
+    data.frame(map_predictor = dens$x, density = dens$y)
+}
+
+get_grouped_density <- function(data, from_hypo = 65, from_nonhypo = 65) {
+    bind_rows(
+        "TRUE" = get_density(data[data$hypo == TRUE,], from = from_hypo),
+        "FALSE" = get_density(data[data$hypo == FALSE,], from = from_nonhypo),
+        .id = "hypo"
+    ) |> mutate(hypo = as.logical(hypo))
+}
+
+density_full <- get_grouped_density(d) |> 
+    ggplot(aes(map_predictor, y = density, fill = hypo, group = hypo)) + 
+    geom_area(alpha = 0.7, position = "identity", show.legend = FALSE) +
+    # geom_vline(xintercept = c(70, 75, 80), color = "#555555", linetype = 2) +
+    color_scale +
+    fill_scale + 
+    labs(y = "Density") +
+    x_scale +
+    theme(axis.title.x = ggtext::element_markdown())
+
+density_grey  <- density_full %+% get_grouped_density(filter(d, !grey)) 
+
+density_biased <- density_full %+% get_grouped_density(filter(d, hypo | nonhypo), 
+                                                       from_nonhypo = 75)
+
 # Combine plots
-scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
+simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
+    density_full + density_grey + density_biased +
     roc_plot_full + roc_plot_grey + roc_plot_biased + 
-    plot_layout(ncol = 3, byrow = TRUE, guides = "collect") 
-ggsave("figure2_simulation.pdf", device = cairo_pdf, width = 9, height = 7)
+    plot_layout(ncol = 3, byrow = TRUE, heights = c(3, 1, NA))
+
+ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, width = 9, height = 9)
+ggsave("figure3_simulation.png", simulation_figure, bg = "white", width = 9, height = 9)
 ```
 
