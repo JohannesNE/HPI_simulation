@@ -1,5 +1,5 @@
 ---
-title: Supplementary document - The Performance of Hypotension Prediction Index May
+title: Supplementary Digital Content - The Performance of Hypotension Prediction Index May
   Be Overestimated Due to Selection Bias
 author: "Johannes Enevoldsen and Simon Tilma Vistisen"
 output: 
@@ -491,7 +491,7 @@ scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) +
     scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(1,5))) + 
     x_scale +
     
-    labs(y = "MAP in 5 minutes (outcome) [mmHg]", color = "") + 
+    labs(y = "MAP 5 minutes later (outcome) [mmHg]", color = "") + 
     ggtitle("**A** Full analysis") +
     color_scale +
     coord_equal() +
