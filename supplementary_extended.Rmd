@@ -156,6 +156,177 @@ plot(roc_d2)
 plot(roc_analysis_biased, add = TRUE, col = "red")
 ```
 
+
+# Creating a logistic regression model with only one relevant predictor
+
+Here is a simple demonstration of how a logistic regression based prediction model could get its entire predictive ability from a single predictor, despite including multiple predictors. 
+
+In this example, we simulate a scenario, where only MAP is a relevant predictor of hypotension. The remaining variables are random noise. In reality, it is of course entirely possible that HPI is also relevantly influenced by other variables than MAP.
+
+We generate data identically to presented above, only this time we generate 5000 observations.
+
+```{r}
+library(pROC)
+
+set.seed(1)
+correlated_map_large <-
+    faux::rnorm_multi(
+        n = 5000,
+        mu = c(75, 75),
+        sd = c(10, 10),
+        r = 0.6,
+        varnames = list("map_predictor", "map_outcome")
+    ) |>
+    as_tibble() |> 
+    filter(map_predictor > 65,
+           map_predictor < 105,
+           map_outcome > 45,
+           map_outcome < 105)
+
+d_large <- mutate(
+    correlated_map_large,
+    hypo = map_outcome < 65,
+    grey = map_outcome >= 65 & map_outcome < 75,
+    nonhypo = map_outcome >= 75 & map_predictor >= 75
+) 
+
+d_model <- filter(d_large, hypo | nonhypo)
+
+n_obs <- nrow(d_model)
+```
+
+After applying the biased data selection, we have `r n_obs` observations.
+
+```{r}
+ggplot(d_model, aes(map_predictor, map_outcome)) +
+    geom_point(size = 0.5, alpha = 0.5)
+```
+
+In addition to MAP, we will add 9 variables that convey no information about the risk of future hypotension. We simply draw these independently from a normal distribution. We use a standard deviation of 10, to put the random variables on the same scale as MAP.
+
+```{r}
+d_model <- mutate(d_model,
+                  var1 = rnorm(n = n_obs, sd = 10),
+                  var2 = rnorm(n = n_obs, sd = 10),
+                  var3 = rnorm(n = n_obs, sd = 10),
+                  var4 = rnorm(n = n_obs, sd = 10),
+                  var5 = rnorm(n = n_obs, sd = 10),
+                  var6 = rnorm(n = n_obs, sd = 10),
+                  var7 = rnorm(n = n_obs, sd = 10),
+                  var8 = rnorm(n = n_obs, sd = 10),
+                  var9 = rnorm(n = n_obs, sd = 10),
+                  .after = hypo)
+
+head(d_model)
+```
+
+We split the data into a training set and a test set (50:50).
+
+```{r}
+set.seed(1)
+sample_i <- sample(1:n_obs, size = floor(n_obs/2))
+d_train <- d_model[sample_i,] 
+d_test <- d_model[-sample_i,] 
+```
+
+We fit a logistic regression to the test set.
+
+```{r}
+fake_hpi_model <- glm(hypo ~ map_predictor + var1 + var2 + var3 + var4 + var5 + var6 + 
+        var7 + var8 + var9, data = d_train, family = binomial())
+
+gtsummary::tbl_regression(fake_hpi_model) |> 
+    gtsummary::as_gt() |> 
+    gt::as_latex()
+```
+
+We can see that the model correctly identifies that only MAP is a relevant predictor of hypotension in this simulated data set.
+
+HPI is the predictions from a logistic regression times 100. We calculate these predictions for each observation in the training set and plot it against the predictor MAP.
+
+```{r}
+d_train$sim_HPI <- predict(fake_hpi_model, type = "response") * 100
+
+ggplot(d_train, aes(map_predictor, sim_HPI)) +
+    geom_point()
+```
+
+We use a ROC analysis to see how well this simulated HPI can discreminate future hypotension from future nonhypotension.
+
+```{r}
+(roc_hpi_train <- roc(hypo ~ sim_HPI, data = d_train))
+```
+
+Now, we use the same fitted model to create predictions on the test set.
+
+```{r}
+d_test$sim_HPI <- predict(fake_hpi_model, newdata = d_test, type = "response") * 100
+
+(roc_hpi_test <- roc(hypo ~ sim_HPI, data = d_test))
+```
+
+We also make the same ROC analyses for MAP directly, and plot all four ROC curves.
+
+```{r}
+roc_map_train <- roc(hypo ~ map_predictor, data = d_train)
+roc_map_test <- roc(hypo ~ map_predictor, data = d_test)
+
+{
+    plot(roc_hpi_train, col = "darkblue", lty = 2)
+    plot(roc_map_train, col = "darkred", lty = 2, add = TRUE)
+    plot(roc_hpi_test, col = "darkblue", add = TRUE)
+    plot(roc_map_test, col = "darkred", add = TRUE)
+    legend(x = 0.8, y = 0.4, 
+           legend = c(sprintf("Simulated HPI train; AUC = %.3f", auc(roc_hpi_train)), 
+                      sprintf("MAP train; AUC = %.3f", auc(roc_map_train)), 
+                      sprintf("Simulated HPI test; AUC = %.3f", auc(roc_hpi_test)),
+                      sprintf("MAP test; AUC = %.3f", auc(roc_map_test))),
+       lty = c(2,2,1,1),
+       col = c("darkblue", "darkred", "darkred", "darkblue"))  
+}
+```
+
+# A logistic regression with a single independent variable will return predictions ranked identically to the independent variable.
+
+As a last example, we make a logistic regression with MAP as the only independent variable.
+Here, the ROC analysis will be identical to the ROC analysis using MAP directly.
+A ROC analysis relies only on the ranks of the predictor, and ranks are not changed by a logistic regression with one independent variable (with the exception that they can be reversed, which also does not impact the ROC analysis result). T This can also be appreciated from the logistic regression formula:
+
+$$
+HPI_{map\ only} = 100 * \frac{1}{1 + e^{-(\beta_0 + \beta_1 MAP)}}
+$$
+
+The linear part of a logistic regression ($\beta_0 + \beta_1 MAP$) multiplies the independent variable with a constant, $\beta_1$ and adds a constant, $\beta_0$. This can reverse the ranks (if $\beta_1 < 0$) but not otherwise change them. The logisic link function also preserves the ranks (the same does multiplying by 100 to get the final HPI score).
+
+```{r}
+map_model <- glm(hypo ~ map_predictor, data = d_train, family = binomial())
+
+d_train <- mutate(d_train, sim_HPI_w_map_only = predict(map_model, type = "response") * 100)
+
+ggplot(d_train, aes(map_predictor, sim_HPI_w_map_only)) +
+    geom_point() +
+    labs(title = "Simulated HPI (Predictions*100) from a logistic regression fitted only on MAP")
+```
+
+Here, we compare the ROC analysis from this simulated HPI based only on MAP with the ROC analysis using MAP directly.
+
+```{r}
+roc_map_model <- roc(hypo ~ sim_HPI_w_map_only, data = d_train)
+
+{
+    plot(roc_map_model, col = "darkblue")
+    plot(roc_map_train, col = "darkred", lty = 2, add = TRUE)
+    legend(
+        x = 0.8,
+        y = 0.3,
+        legend = c("Logistic regression with only MAP",
+                   "MAP directly"),
+        lty = c(1, 2),
+        col = c("darkblue", "darkred")
+    )
+}
+```
+
 # Create figure 3
 
 ```{r fig.height=9, fig.width=9}
@@ -321,7 +492,7 @@ scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) +
     x_scale +
     
     labs(y = "MAP 5 minutes later (outcome) [mmHg]", color = "") + 
-    ggtitle(sprintf("**A** Full analysis (n=%d)", nrow(d))) +
+    ggtitle("**A** Full analysis") +
     color_scale +
     coord_equal() +
     theme(axis.title.x = ggtext::element_markdown())
@@ -348,7 +519,7 @@ scatter_plot_full_w_labs <- scatter_plot_full + event_labels
 scatter_plot_grey <- scatter_plot_full %+% filter(d, !grey) +
     geom_hline(yintercept = 75, color = "#555555") +
     event_labels +
-    ggtitle(sprintf("**B** Events where MAP (outcome) is between 65 and 75 mmHg (“gray zone”) are excluded (n=%d)", nrow(filter(d, !grey)))) 
+    ggtitle("**B** Events where MAP (outcome) is between 65 and 75 mmHg (“gray zone”) are excluded") 
                
 scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
     annotate("segment",
@@ -357,7 +528,7 @@ scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
         color = "#555555"
     ) +
     event_labels +
-    ggtitle(sprintf("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg (n=%d)", nrow(filter(d, hypo | nonhypo))))
+    ggtitle("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg")
 
 # Density plots
 get_density <- function(data, from = from) {
