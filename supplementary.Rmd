@@ -45,15 +45,15 @@ theme_set(theme_minimal(base_size = 12))
 We simulate 1000 paired observations, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor.
 
 The specific parameters of the simulation are simply chosen to place most data in a relevant interval: between 55 and 95 mmHg. 
-The correlation coefficient (` r = 0.6`) is chosen to give MAP a modest predictive power, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
-However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message.
+The correlation coefficient (` r = 0.5`) is chosen to give MAP a modest predictive power, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
+However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message. 
 
 ```{r}
 set.seed(12345)
 correlated_map <- faux::rnorm_multi(n = 1000, 
                                     mu = c(75, 75), 
-                                    sd = c(10, 10),
-                                    r = 0.6,
+                                    sd = c(13, 13),
+                                    r = 0.5,
                                     # "map_predictor" represents the current map value
                                     # "map_outcome" represents what map is 5 minutes from now.
                                     varnames = list("map_predictor", "map_outcome")
@@ -61,26 +61,10 @@ correlated_map <- faux::rnorm_multi(n = 1000,
                                     
 ```
 
-We filter the simulated data to remove observations where the predictor MAP is below 65 mmHg.
-This reduces the AUC of all analyses, but the difference between the biased and unbiased selections remain clear.   
-
-We also remove a few extreme points simply to reduce white space in the plots. Again, this simulation is not intended to mimic real data!
-
-```{r}
-d <- filter(correlated_map,
-        # We remove points where map is below 65 in the predictor
-        map_predictor > 65,
-        # Remove extreme points
-        map_predictor < 105,
-        map_outcome > 45,
-        map_outcome < 105
-        )
-```
-
 We label the relevant zones of the data. Each row is the combination of an event (hypotensive or non-hypotensive) and the sample used to predict the event (`map_predictor`).
 
 ```{r}
-d <- mutate(d,
+d <- mutate(correlated_map,
         # If map_outcome is < than 65, this is represented as a hypotensive event
         hypo = map_outcome < 65,
         # If map_outcome is between 65 and 75, this is a greyzone event.
@@ -223,15 +207,15 @@ roc_plot_full <- ggplot(roc_data_full, aes(1-specificities, sensitivities)) +
     geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
     geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
                     parse = TRUE,
-                    size = 3.1,
+                    size = 3,
                     box.padding = 0.1,
                     point.size = 0.1,
                     segment.color = "#555555",
-                    position = position_nudge_repel(y = -0.2, x=0.2),
+                    position = position_nudge_repel(y = -0.25, x=0.2),
                     ylim = c(0.15, 1),
+                    xlim = c(0, 1.1), # extend to outside plotting area
                     direction = "y",
                     label.size  = NA,
-                    #vjust = 1, 
                     hjust = 0,
                     family = "Helvetica",
                     data = roc_labels_full
@@ -251,15 +235,15 @@ roc_plot_grey <- ggplot(roc_data_grey, aes(1-specificities, sensitivities)) +
     geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
     geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
                      parse = TRUE,
-                     size = 3.1,
+                     size = 3,
                      box.padding = 0.1,
                      point.size = 0.1,
                      segment.color = "#555555",
                      direction = "y",
-                     position = position_nudge_repel(y = -0.2, x=0.2),
+                     position = position_nudge_repel(y = -0.3, x=0.2),
                      ylim = c(0.15, 1),
+                     xlim = c(0, 1.1), # extend to outside plotting area
                      label.size  = NA,
-                     #vjust = 1, 
                      hjust = 0,
                      family = "Helvetica",
                      data = roc_labels_grey
@@ -280,15 +264,15 @@ roc_plot_biased <- ggplot(roc_data_biased, aes(1-specificities, sensitivities)) 
     geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
     geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
                     parse = TRUE,
-                    size = 3.1,
+                    size = 3,
                     box.padding = 0.1,
                     point.size = 0.3,
                     segment.color = "#555555",
-                    position = position_nudge_repel(y = -0.1, x=0.2),
+                    position = position_nudge_repel(y = -0.3, x=0.2),
                     ylim = c(0.15, 1),
+                    xlim = c(0, 1.1), # extend to outside plotting area
                     direction = "y",
                     label.size  = NA,
-                    #vjust = 1, 
                     hjust = 0,
                     family = "Helvetica",
                     data = roc_labels_biased
@@ -310,14 +294,17 @@ color_scale <- scale_color_manual(values = plot_colors,
 fill_scale <- scale_fill_manual(values = plot_colors,
                                   labels = c("Non-hypotensive events", "Hypotensive events"))                                  
 
-x_scale <- scale_x_continuous(breaks = seq(65, 95, by = 10), 
-    limits = round(range(d$map_predictor) + c(-1, 1), 0), 
+x_limits <- round(range(d$map_predictor) + c(-1, 1), 0)
+
+x_scale <- scale_x_continuous(breaks = seq(45, 105, by = 10), 
+    limits = x_limits, 
+    expand = c(0,0),
     name = "MAP<sub>now</sub> (predictor) [mmHg]")
 
 scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
     geom_point(size = 0.7, show.legend = FALSE) +
     geom_hline(yintercept = 65, color = "#555555") +
-    scale_y_continuous(breaks = seq(55, 95, by = 10), expand = expansion(add = c(1,5))) + 
+    scale_y_continuous(breaks = seq(45, 105, by = 10), expand = expansion(add = c(1,5))) + 
     x_scale +
     
     labs(y = "MAP 5 minutes later (outcome) [mmHg]", color = "") + 
@@ -335,7 +322,7 @@ labels <- tribble(
 event_labels <- geom_label(aes(x, y, label = label),
                      size = 3.5,
                      #label.size  = NA,
-                     fill = "white",
+                     fill = alpha("white", 0.5),
                      vjust = "inward", 
                      hjust = "inward", 
                      family = "Helvetica",
@@ -353,7 +340,7 @@ scatter_plot_grey <- scatter_plot_full %+% filter(d, !grey) +
 scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
     annotate("segment",
         x = 75, xend = 75,
-        y = 75, yend = Inf,
+        y = 75, yend = 105,
         color = "#555555"
     ) +
     event_labels +
@@ -365,7 +352,7 @@ get_density <- function(data, from = from) {
     data.frame(map_predictor = dens$x, density = dens$y)
 }
 
-get_grouped_density <- function(data, from_hypo = 65, from_nonhypo = 65) {
+get_grouped_density <- function(data, from_hypo, from_nonhypo) {
     bind_rows(
         "TRUE" = get_density(data[data$hypo == TRUE,], from = from_hypo),
         "FALSE" = get_density(data[data$hypo == FALSE,], from = from_nonhypo),
@@ -392,9 +379,9 @@ density_biased <- density_full %+% get_grouped_density(filter(d, hypo | nonhypo)
 simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
     density_full + density_grey + density_biased +
     roc_plot_full + roc_plot_grey + roc_plot_biased + 
-    plot_layout(ncol = 3, byrow = TRUE, heights = c(3, 1, NA))
+    plot_layout(ncol = 3, byrow = TRUE, heights = c(2.5, 1, NA))
 
-ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, width = 9, height = 9)
-ggsave("figure3_simulation.png", simulation_figure, bg = "white", width = 9, height = 9)
+ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, width = 8, height = 7)
+ggsave("figure3_simulation.png", simulation_figure, bg = "white", width = 8, height = 7)
 ```
 
