@@ -42,10 +42,10 @@ theme_set(theme_minimal(base_size = 12))
 
 > **OBS:** This simulation does not attempt to create realistic data or to accurately preset how Hypotension Prediciton Index may have been developed. 
 
-We simulate 1000 paired observations, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor.
+We simulate 1000 paired MAP values, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor.
 
 The specific parameters of the simulation are simply chosen to place most data in a relevant interval: between 55 and 95 mmHg. 
-The correlation coefficient (` r = 0.5`) is chosen to give MAP a modest predictive power, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
+The correlation coefficient (` r = 0.5`) is chosen to give MAP a modest predictive ability, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
 However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message. 
 
 ```{r}
@@ -61,7 +61,7 @@ correlated_map <- faux::rnorm_multi(n = 1000,
                                     
 ```
 
-We label the relevant zones of the data. Each row is the combination of an event (hypotensive or non-hypotensive) and the sample used to predict the event (`map_predictor`).
+We label the relevant zones of the data. Each row is the combination of an event (`hypo == TRUE` or `hypo == FALSE`) and the sample used to predict the event (`map_predictor`).
 
 ```{r}
 d <- mutate(correlated_map,
@@ -111,6 +111,8 @@ legend(
 ```
 
 # Create figure 3
+
+The remaining code combines the scatters and the ROC analyses into figure 3.
 
 ```{r fig.height=9, fig.width=9}
 library(ggrepel)
