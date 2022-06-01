@@ -44,24 +44,32 @@ theme_set(theme_minimal(base_size = 12))
   It only serves to illustrate how the selection problem results in a “skewed” ROC curve 
   with very high specificity. 
 
-We simulate 1000 paired MAP values, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor.
+We simulate 1000 paired MAP values, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor. Since prediction may not be relevant if the patient is already hypotensive, we exclude data where `map_predictor` is < 65 mmHg.
 
 The specific parameters of the simulation are simply chosen to place most data in a relevant interval: between 55 and 95 mmHg. 
-The correlation coefficient (` r = 0.5`) is chosen to give MAP a modest predictive ability, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
+The correlation coefficient (` r = 0.55`) is chosen to give MAP a modest predictive ability, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
 However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message. 
 
 ```{r}
 set.seed(12345)
-correlated_map <- faux::rnorm_multi(n = 1000, 
-                                    mu = c(75, 75), 
-                                    sd = c(13, 13),
-                                    r = 0.5,
-                                    # "map_predictor" represents the current map value
-                                    # "map_outcome" represents what map is 5 minutes from now.
-                                    varnames = list("map_predictor", "map_outcome")
-                                    )
-                                    
+# To get 1000 samples for the "full analysis", we generate too many samples, 
+# remove samples where map_predictor is < 65 and then select 1000 of the 
+# remaining samples.
+correlated_map <- faux::rnorm_multi(
+    n = 2000,
+    mu = c(75, 75),
+    sd = c(13, 13),
+    r = 0.55,
+    # "map_predictor" represents the current map value
+    # "map_outcome" represents what map is 5 minutes from now.
+    varnames = list("map_predictor", "map_outcome")
+) |> 
+    filter(map_predictor >= 65) |> 
+    head(1000)
+
 ```
+
+After removing samples with `map_predictor` < 65 mmHg, we get a correlation of r = `r round(cor(correlated_map$map_predictor, correlated_map$map_outcome), 2)`.
 
 We label the relevant zones of the data. Each row is the combination of an event (`hypo == TRUE` or `hypo == FALSE`) and the sample used to predict the event (`map_predictor`).
 
@@ -72,8 +80,9 @@ d <- mutate(correlated_map,
         # If map_outcome is between 65 and 75, this is a greyzone event.
         grey = map_outcome >= 65 & map_outcome < 75,
         # If map_outcome and map_predictor is >= 75, this is a nonevent. 
-        nonhypo = map_outcome >= 75 & map_predictor >= 75
-        )
+        nonhypo = map_outcome >= 75 & map_predictor >= 75,
+        ) 
+    
 ```
 
 Here is a plot to show the applied labels.
@@ -140,7 +149,8 @@ theme_set(
                 minheight = unit(3, "lines"), width = unit(2.5, "inches")
             ),
             axis.title = element_text(size = 9.5),
-            axis.text = ggplot2::element_text(size = ggplot2::rel(0.8)),
+            axis.text = ggplot2::element_text(size = ggplot2::rel(0.9),
+                                              color = "#333333"),
             panel.grid.major = ggplot2::element_line(
                 color = "#454545",
                 size = 0.3,
@@ -276,7 +286,7 @@ color_scale <- scale_color_manual(values = plot_colors,
 fill_scale <- scale_fill_manual(values = plot_colors,
                                   labels = c("Non-hypotensive events", "Hypotensive events"))                                  
 
-x_limits <- round(range(d$map_predictor) + c(-10, 1), 0)
+x_limits <- round(range(d$map_predictor) + c(-5, 1), 0)
 
 x_scale <- scale_x_continuous(breaks = seq(45, 105, by = 10), 
     limits = x_limits, 
@@ -286,7 +296,7 @@ x_scale <- scale_x_continuous(breaks = seq(45, 105, by = 10),
 scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
     geom_point(size = 0.7, show.legend = FALSE) +
     geom_hline(yintercept = 65, color = "#555555") +
-    scale_y_continuous(breaks = seq(45, 105, by = 10), expand = expansion(add = c(10,10))) + 
+    scale_y_continuous(breaks = seq(45, 105, by = 10), expand = expansion(add = c(2,10))) + 
     x_scale +
     
     labs(y = "MAP 5 minutes later (outcome) [mmHg]", color = "") + 
@@ -342,7 +352,7 @@ get_grouped_density <- function(data, from_hypo, from_nonhypo) {
     ) |> mutate(hypo = as.logical(hypo))
 }
 
-density_full <- get_grouped_density(d) |> 
+density_full <- get_grouped_density(d, from_hypo = 65, from_nonhypo = 65) |> 
     ggplot(aes(map_predictor, y = density, fill = hypo, group = hypo)) + 
     geom_area(alpha = 0.7, position = "identity", show.legend = FALSE) +
     geom_vline(xintercept = c(70, 75, 80), color = "#555555", linetype = 2) +
@@ -352,10 +362,13 @@ density_full <- get_grouped_density(d) |>
     x_scale +
     theme(axis.title.x = ggtext::element_markdown())
 
-density_grey  <- density_full %+% get_grouped_density(filter(d, !grey)) 
+density_grey  <- density_full %+% 
+    get_grouped_density(filter(d, !grey), 
+                        from_hypo = 65, from_nonhypo = 65) 
 
-density_biased <- density_full %+% get_grouped_density(filter(d, hypo | nonhypo), 
-                                                       from_nonhypo = 75)
+density_biased <- density_full %+% 
+    get_grouped_density(filter(d, hypo | nonhypo), 
+                        from_hypo = 65, from_nonhypo = 75)
 
 # Combine plots
 simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
@@ -364,9 +377,9 @@ simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot
     plot_layout(ncol = 3, byrow = TRUE, heights = c(2.5, 1, NA))
 
 ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, 
-    width = 18, height = 16, units = "cm", scale = 1.15)
+    width = 18, height = 18, units = "cm", scale = 1.15)
 ggsave("figure3_simulation.png", simulation_figure, device = ragg::agg_png, bg = "white", 
-    width = 20, height = 17, units = "cm", scale = 1.15)
+    width = 18, height = 18, units = "cm", scale = 1.15)
 
 simulation_figure
 ```
