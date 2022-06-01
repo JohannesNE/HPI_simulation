@@ -40,7 +40,9 @@ theme_set(theme_minimal(base_size = 12))
 
 # Simulation of the selection problem
 
-> **OBS:** This simulation does not attempt to create realistic data or to accurately preset how Hypotension Prediciton Index may have been developed. 
+> **OBS:** The simulation is not an attempt to produce realistic data. 
+  It only serves to illustrate how the selection problem results in a “skewed” ROC curve 
+  with very high specificity. 
 
 We simulate 1000 paired MAP values, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor.
 
@@ -109,6 +111,14 @@ legend(
     col = c("red", "black", "black")
 )  
 ```
+
+The ROC curve from the biased data selection shows a sharp drop in specificity (when MAPnow is > 75 mmHg) 
+compared to that in the model-development paper (fig. 1). 
+This difference can be explained by a combination of two effects. 
+First, in the model development, all MAP values in a 30-minute period had to be > 75 mmHg; 
+due to the variation in MAP over 30 minutes, any specific measurement (here, the midpoint) 
+is unlikely to be very close to 75 mmHg. 
+Second, although HPI may be driven predominantly by MAP, other predictors influence HPI as well.
 
 # Create figure 3
 
@@ -357,5 +367,7 @@ ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf,
     width = 18, height = 16, units = "cm", scale = 1.15)
 ggsave("figure3_simulation.png", simulation_figure, device = ragg::agg_png, bg = "white", 
     width = 20, height = 17, units = "cm", scale = 1.15)
+
+simulation_figure
 ```
 
