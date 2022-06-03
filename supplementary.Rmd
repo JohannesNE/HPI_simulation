@@ -30,7 +30,6 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE,
 ```{r}
 library(pROC)
 library(tidyverse)
-# install.packages("faux") # used to simulate data
 
 # A few extra packages are used to create the simulation figure. We load these in 
 # the relevant section.
@@ -44,56 +43,34 @@ theme_set(theme_minimal(base_size = 12))
   It only serves to illustrate how the selection problem results in a “skewed” ROC curve 
   with very high specificity. 
 
-We simulate 1000 paired MAP values, to show what the data selection described in the model-development paper does to the performance of a model that uses MAP as a predictor. Since prediction may not be relevant if the patient is already hypotensive, we exclude data where `map_predictor` is < 65 mmHg.
+We make a simple simulation, to show what the data selection described in the model-development paper can do to the performance of a model that uses MAP as a predictor. 
 
-The specific parameters of the simulation are simply chosen to place most data in a relevant interval: between 55 and 95 mmHg. 
-The correlation coefficient (` r = 0.55`) is chosen to give MAP a modest predictive ability, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
-However, any reasonable distribution of data, and any correlation coefficient between 0 and ~0.9, will convey the intended message. 
+The specific parameters of the simulation are simply chosen to place most data in a relevant interval (55 to 95 mmHg) and to give MAP a modest predictive ability, similar to what is presented by Davies *et al* (http://doi.org/10.1213/ANE.0000000000004121)
+However, whenever we have MAP values above and below 75 mmHg for both samples corresponding to hypotensive- and nonhypotensive events, the effect of the selection bias will be present.
+
+We generate normally distributed data representing the MAP in samples corresponding to hypotensive events and nonhypotensive events. For the hypotension samples, we generate 300 values with a mean of 72 mmHg and a SD of 6 mmHg. For the nonhypotension samples we generate 300 values with a mean of 78 mmHg and a SD of 6 mmHg. 
 
 ```{r}
-set.seed(12345)
-# To get 1000 samples for the "full analysis", we generate too many samples, 
-# remove samples where map_predictor is < 65 and then select 1000 of the 
-# remaining samples.
-correlated_map <- faux::rnorm_multi(
-    n = 2000,
-    mu = c(75, 75),
-    sd = c(13, 13),
-    r = 0.55,
-    # "map_predictor" represents the current map value
-    # "map_outcome" represents what map is 5 minutes from now.
-    varnames = list("map_predictor", "map_outcome")
-) |> 
-    filter(map_predictor >= 65) |> 
-    head(1000)
+set.seed(999)
+
+d <- data.frame(
+    Hypotensive = rnorm(300, mean = 72, sd = 6),
+    Nonhypotensive = rnorm(300, mean = 78, sd = 6)) |>
+    pivot_longer(everything(), names_to = "outcome",
+                 values_to = "map_predictor") |>
+    mutate(hypo = outcome == "Hypotensive",
+           excluded = !hypo & map_predictor < 75)
 
 ```
 
-After removing samples with `map_predictor` < 65 mmHg, we get a correlation of r = `r round(cor(correlated_map$map_predictor, correlated_map$map_outcome), 2)`.
-
-We label the relevant zones of the data. Each row is the combination of an event (`hypo == TRUE` or `hypo == FALSE`) and the sample used to predict the event (`map_predictor`).
+The generated data looks like this:
 
 ```{r}
-d <- mutate(correlated_map,
-        # If map_outcome is < than 65, this is represented as a hypotensive event
-        hypo = map_outcome < 65,
-        # If map_outcome is between 65 and 75, this is a greyzone event.
-        grey = map_outcome >= 65 & map_outcome < 75,
-        # If map_outcome and map_predictor is >= 75, this is a nonevent. 
-        nonhypo = map_outcome >= 75 & map_predictor >= 75,
-        ) 
+ggplot(d, aes(hypo, map_predictor, color = excluded)) +
+    ggbeeswarm::geom_quasirandom(size = 2, bandwidth = 0.8) +
+    scale_x_discrete(limits = c(TRUE, FALSE), name = "", labels = c("Hypotensive", "Nonhypotensive")) +
+    labs(y = "MAP (predictor) [mmHg]") 
     
-```
-
-Here is a plot to show the applied labels.
-
-```{r}
-ggplot(d, aes(map_predictor, map_outcome, color = case_when(hypo ~ "Hypo",
-                                                            grey ~ "Grey zone",
-                                                            nonhypo ~ "Non-hypo",
-                                                            TRUE ~ "Excluded"))) +
-    geom_point() +
-    labs(color = "label")
 ```
 
 Now we can make the ROC analyses.
@@ -101,19 +78,15 @@ Now we can make the ROC analyses.
 ```{r, message=FALSE}
 # With all data
 roc_analysis_full <- roc(hypo~map_predictor, data = d)
-# Excluding grey zone
-roc_analysis_grey <- roc(hypo~map_predictor, data = filter(d, !grey))
 # Include only data that is either event or non-event per model-development definition
-roc_analysis_biased <- roc(hypo~map_predictor, data = filter(d, hypo | nonhypo))
+roc_analysis_biased <- roc(hypo~map_predictor, data = filter(d, !excluded))
 
 plot(roc_analysis_full)
-plot(roc_analysis_grey, lty = 2, add = TRUE)
 plot(roc_analysis_biased, col = "red", add = TRUE)
 legend(
     x = 0.7, y = 0.3,
     legend = c(
         sprintf("Biased selection; AUC = %.3f", auc(roc_analysis_biased)),
-        sprintf("No grey zone; AUC = %.3f", auc(roc_analysis_grey)),
         sprintf("Full analysis; AUC = %.3f", auc(roc_analysis_full))
     ),
     lty = c(1, 2, 1),
@@ -131,7 +104,7 @@ Second, although HPI may be driven predominantly by MAP, other predictors influe
 
 # Create figure 3
 
-The remaining code combines the scatters and the ROC analyses into figure 3.
+The remaining code combines plots of MAP values and the ROC analyses into figure 3.
 
 ```{r fig.height=9, fig.width=9}
 library(ggrepel)
@@ -148,7 +121,7 @@ theme_set(
                 vjust = 0,
                 minheight = unit(3, "lines"), width = unit(2.5, "inches")
             ),
-            axis.title = element_text(size = 9.5),
+            axis.title = element_text(size = rel(1)),
             axis.text = ggplot2::element_text(size = ggplot2::rel(0.9),
                                               color = "#333333"),
             panel.grid.major = ggplot2::element_line(
@@ -159,18 +132,13 @@ theme_set(
             panel.grid.minor = ggplot2::element_blank()
         ))
 
-plot_colors <- c("#2A6EBB", "#bb612a")
+plot_colors <- c("#bb612a", "#2A6EBB")
 
 # First we extract all combinations of sensitivity, specificity and thresholds for  
 # all ROC analyses
 roc_data_full <- as.data.frame(roc_analysis_full[c("sensitivities", 
                                                    "specificities", 
                                                    "thresholds")])  |>  
-    arrange(desc(specificities), sensitivities)
-
-roc_data_grey <- as.data.frame(roc_analysis_grey[c("sensitivities", 
-                                                   "specificities", 
-                                                   "thresholds")]) |> 
     arrange(desc(specificities), sensitivities)
 
 roc_data_biased <- as.data.frame(roc_analysis_biased[c("sensitivities", 
@@ -190,16 +158,15 @@ roc_label_filter <- function(roc_data) {
 }
 
 roc_labels_full <- roc_label_filter(roc_data_full)
-roc_labels_grey <- roc_label_filter(roc_data_grey)
 roc_labels_biased <- roc_label_filter(roc_data_biased)
 
-# Make the 3 ROC panels
+# Make the 2 ROC panels
 roc_plot_full <- ggplot(roc_data_full, aes(1-specificities, sensitivities)) +
     geom_step() +
     geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
-    geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
+    geom_label_repel(aes(label = glue::glue("MAP < {round(thresholds, 0)}")),
                     parse = TRUE,
-                    size = 3,
+                    size = 3.3,
                     box.padding = 0.1,
                     point.size = 0.1,
                     segment.color = "#555555",
@@ -222,41 +189,13 @@ roc_plot_full <- ggplot(roc_data_full, aes(1-specificities, sensitivities)) +
     labs(x = "1 - specificity", y = "Sensitivity") +
     coord_equal()
 
-roc_plot_grey <- ggplot(roc_data_grey, aes(1-specificities, sensitivities)) +
-    geom_step() +
-    geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
-    geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
-                     parse = TRUE,
-                     size = 3,
-                     box.padding = 0.1,
-                     point.size = 0.1,
-                     segment.color = "#555555",
-                     direction = "y",
-                     position = position_nudge_repel(y = -0.3, x=0.2),
-                     ylim = c(0.15, 1),
-                     xlim = c(0, 1.1), # extend to outside plotting area
-                     label.size  = NA,
-                     hjust = 0,
-                     family = "Helvetica",
-                     data = roc_labels_grey
-    ) +
-    annotate("label",
-             x = 1, y = 0, 
-             label = sprintf("AUC = %.2f", auc(roc_analysis_grey)),
-             hjust = 1, vjust = -0,
-             label.size = NA,
-              family = "Helvetica",
-              #label.size = NA,
-              size = 3.5) + 
-    labs(x = "1 - specificity", y = "Sensitivity") +
-    coord_equal()
 
 roc_plot_biased <- ggplot(roc_data_biased, aes(1-specificities, sensitivities)) +
     geom_step() +
     geom_abline(slope = 1, intercept = 0, linetype = 2, color = "grey") +
-    geom_label_repel(aes(label = glue::glue("MAP[now] < {round(thresholds, 0)}")),
+    geom_label_repel(aes(label = glue::glue("MAP < {round(thresholds, 0)}")),
                     parse = TRUE,
-                    size = 3,
+                    size = 3.3,
                     box.padding = 0.1,
                     point.size = 0.3,
                     segment.color = "#555555",
@@ -279,107 +218,45 @@ roc_plot_biased <- ggplot(roc_data_biased, aes(1-specificities, sensitivities)) 
     labs(x = "1 - specificity", y = "Sensitivity") +
     coord_equal()
 
-# Make the 3 scatter plots
-color_scale <- scale_color_manual(values = plot_colors,
-                                  labels = c("Non-hypotensive events", "Hypotensive events"))
+# Make the 2 dot plots
+color_scale <- scale_color_manual(values = plot_colors)
 
-fill_scale <- scale_fill_manual(values = plot_colors,
-                                  labels = c("Non-hypotensive events", "Hypotensive events"))                                  
+map_scale <- scale_y_continuous(breaks = seq(45, 105, by = 10), 
+    expand = c(0.01,0.01),
+    name = "MAP (predictor) [mmHg]")
 
-x_limits <- round(range(d$map_predictor) + c(-5, 1), 0)
-
-x_scale <- scale_x_continuous(breaks = seq(45, 105, by = 10), 
-    limits = x_limits, 
-    expand = c(0,0),
-    name = "MAP<sub>now</sub> (predictor) [mmHg]")
-
-scatter_plot_full <- ggplot(d, aes(map_predictor, map_outcome, color = hypo)) + 
-    geom_point(size = 0.7, show.legend = FALSE) +
-    geom_hline(yintercept = 65, color = "#555555") +
-    scale_y_continuous(breaks = seq(45, 105, by = 10), expand = expansion(add = c(2,10))) + 
-    x_scale +
-    
-    labs(y = "MAP 5 minutes later (outcome) [mmHg]", color = "") + 
-    ggtitle(sprintf("**A** Full analysis (n=%d)", nrow(d))) +
+dot_plot_full <- ggplot(d, aes(outcome, map_predictor, color = outcome)) + 
+    ggbeeswarm::geom_quasirandom(size = 0.8, bandwidth = 1, show.legend = FALSE) +
+    map_scale +
+    labs(x = "",
+         title = sprintf("**A** Full analysis (n=%d)", nrow(d))) + 
     color_scale +
-    coord_equal() +
-    theme(axis.title.x = ggtext::element_markdown())
+    theme(panel.grid.major.x = element_blank())
 
-labels <- tribble(
-    ~label,                  ~hypo, ~x, ~y,
-    "Hypotensive events",    TRUE,  Inf, -Inf,
-    "Non-hypotensive events",FALSE, -Inf, Inf
-    )
-
-event_labels <- geom_label(aes(x, y, label = label),
-                     size = 3.5,
-                     #label.size  = NA,
-                     fill = alpha("white", 0.5),
-                     vjust = "inward", 
-                     hjust = "inward", 
-                     family = "Helvetica",
-                     data = labels,
-                     show.legend = FALSE
-    ) 
-
-scatter_plot_full_w_labs <- scatter_plot_full + event_labels
-
-scatter_plot_grey <- scatter_plot_full %+% filter(d, !grey) +
-    geom_hline(yintercept = 75, color = "#555555") +
-    event_labels +
-    ggtitle(sprintf("**B** Events where MAP (outcome) is between 65 and 75 mmHg (“gray zone”) are excluded (n=%d)", nrow(filter(d, !grey)))) 
-               
-scatter_plot_biased <- scatter_plot_grey %+% filter(d, hypo | nonhypo) +
-    annotate("segment",
-        x = 75, xend = 75,
-        y = 75, yend = max(d$map_outcome),
-        color = "#555555"
-    ) +
-    event_labels +
-    ggtitle(sprintf("**C** Samples corresponding to non-hypotensive events must have a MAP (predictor) ≥ 75 mmHg (n=%d)", nrow(filter(d, hypo | nonhypo))))
-
-# Density plots
-get_density <- function(data, from = from) {
-    dens <- density(data$map_predictor, adjust = 2, n = 100, from = from)
-    data.frame(map_predictor = dens$x, density = dens$y)
-}
-
-get_grouped_density <- function(data, from_hypo, from_nonhypo) {
-    bind_rows(
-        "TRUE" = get_density(data[data$hypo == TRUE,], from = from_hypo),
-        "FALSE" = get_density(data[data$hypo == FALSE,], from = from_nonhypo),
-        .id = "hypo"
-    ) |> mutate(hypo = as.logical(hypo))
-}
-
-density_full <- get_grouped_density(d, from_hypo = 65, from_nonhypo = 65) |> 
-    ggplot(aes(map_predictor, y = density, fill = hypo, group = hypo)) + 
-    geom_area(alpha = 0.7, position = "identity", show.legend = FALSE) +
-    geom_vline(xintercept = c(70, 75, 80), color = "#555555", linetype = 2) +
+dot_plot_biased <- ggplot(d, aes(outcome, map_predictor, color = outcome, 
+                                 # Instead of removing excluded points, we set 
+                                 # alpha to 0 for these points.
+                                 # this makes the shapes of the quasirandom
+                                 # scatters identical, so it is clear that we
+                                 # simply exclude MAP values below 75.
+                                 alpha = excluded)) + 
+    ggbeeswarm::geom_quasirandom(size = 0.8, bandwidth = 1, show.legend = FALSE) +
+    map_scale +
+    scale_alpha_manual(values = c(1, 0)) +
+    labs(x = "",
+         title = sprintf("**B** Samples corresponding to <em>non</em>hypotensive events must have a MAP (predictor) ≥ 75 mmHg (n=%d)", nrow(filter(d, !excluded)))) +
     color_scale +
-    fill_scale + 
-    labs(y = "Density") +
-    x_scale +
-    theme(axis.title.x = ggtext::element_markdown())
-
-density_grey  <- density_full %+% 
-    get_grouped_density(filter(d, !grey), 
-                        from_hypo = 65, from_nonhypo = 65) 
-
-density_biased <- density_full %+% 
-    get_grouped_density(filter(d, hypo | nonhypo), 
-                        from_hypo = 65, from_nonhypo = 75)
+    theme(panel.grid.major.x = element_blank())
 
 # Combine plots
-simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
-    density_full + density_grey + density_biased +
-    roc_plot_full + roc_plot_grey + roc_plot_biased + 
-    plot_layout(ncol = 3, byrow = TRUE, heights = c(2.5, 1, NA))
+simulation_figure <- dot_plot_full + dot_plot_biased +
+    roc_plot_full + roc_plot_biased + 
+    plot_layout(ncol = 2, byrow = TRUE, heights = c(1, 1))
 
 ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, 
-    width = 18, height = 18, units = "cm", scale = 1.15)
+    width = 15, height = 17, units = "cm", scale = 1)
 ggsave("figure3_simulation.png", simulation_figure, device = ragg::agg_png, bg = "white", 
-    width = 18, height = 18, units = "cm", scale = 1.15)
+    width = 15, height = 17, units = "cm", scale = 1)
 
 simulation_figure
 ```
