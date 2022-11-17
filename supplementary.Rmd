@@ -259,6 +259,8 @@ simulation_figure <- (
 
 ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, 
     width = 16, height = 17, units = "cm", scale = 1)
+ggsave("figure3_simulation.svg", simulation_figure,
+    width = 16, height = 17, units = "cm", scale = 0.7)
 ggsave("figure3_simulation.png", simulation_figure, device = ragg::agg_png, bg = "white", 
     width = 16, height = 17, units = "cm", scale = 1)
 
