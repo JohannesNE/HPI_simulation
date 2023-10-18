@@ -372,14 +372,14 @@ density_biased <- density_full %+%
 
 # Combine plots
 simulation_figure <- scatter_plot_full_w_labs + scatter_plot_grey + scatter_plot_biased +
-    density_full + density_grey + density_biased +
+    #density_full + density_grey + density_biased +
     roc_plot_full + roc_plot_grey + roc_plot_biased + 
-    plot_layout(ncol = 3, byrow = TRUE, heights = c(2.5, 1, NA))
+    plot_layout(ncol = 3, byrow = TRUE, heights = c(2.6, 2))
 
 ggsave("figure3_simulation.pdf", simulation_figure, device = cairo_pdf, 
-    width = 18, height = 18, units = "cm", scale = 1.15)
+    width = 18, height = 14, units = "cm", scale = 1.15)
 ggsave("figure3_simulation.png", simulation_figure, device = ragg::agg_png, bg = "white", 
-    width = 18, height = 18, units = "cm", scale = 1.15)
+    width = 18, height = 14, units = "cm", scale = 1.3)
 
 simulation_figure
 ```
