@@ -1,6 +1,5 @@
 ---
-title: Supplementary Digital Content - The Performance of Hypotension Prediction Index May
-  Be Overestimated Due to Selection Bias
+title: Supplementary Digital Content
 author: "Johannes Enevoldsen and Simon Tilma Vistisen"
 output: 
     pdf_document:
@@ -129,9 +128,9 @@ due to the variation in MAP over 30 minutes, any specific measurement (here, the
 is unlikely to be very close to 75 mmHg. 
 Second, although HPI may be driven predominantly by MAP, other predictors influence HPI as well.
 
-# Create figure 3
+# Create figure 1
 
-The remaining code combines the scatters and the ROC analyses into figure 3.
+The remaining code combines the scatters and the ROC analyses into figure 1.
 
 ```{r fig.height=9, fig.width=9}
 library(ggrepel)
